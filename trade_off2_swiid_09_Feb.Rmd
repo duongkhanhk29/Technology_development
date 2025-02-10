@@ -1,0 +1,229 @@
+---
+title: "Trade_off"
+author: "Khanh Duong"
+date: "2024-11-12"
+output: html_document
+---
+
+**Please set working directory before running these codes.**
+
+```{r data}
+library(readxl)
+library(dplyr)
+
+swiid9_7_summary <- read_excel("swiid9_7_summary.xlsx") %>%
+  select(Country_code = code, year, gini_disp, gini_mkt) %>%
+  mutate(redistribution = gini_mkt - gini_disp) %>%
+  mutate(year = as.character(year))
+
+pwt1001 <- read_excel("pwt1001.xlsx", sheet = "Data") %>%
+  select(Country_code = countrycode, year, human_capital = hc, technology = ctfp) %>%
+  mutate(year = as.character(year))
+
+world_bank <- read_excel("world_bank.xlsx") %>%
+  select(
+    Country_code = `Country Code`,
+    year = `Time Code`,
+    GDP_per_capita = `NY.GDP.PCAP.KD`,
+    trade = `NE.TRD.GNFS.ZS`,
+    FDI = `BX.KLT.DINV.WD.GD.ZS`,
+    credit = `FS.AST.PRVT.GD.ZS`,
+    fertility = `SP.DYN.TFRT.IN`,
+    unemployment = `SL.UEM.TOTL.ZS`,
+    inflation = `FP.CPI.TOTL.ZG`
+  ) %>%
+  mutate(year = gsub("YR", "", as.character(year)))
+
+# Merge datasets by 'Country_code' and 'year'
+data <- pwt1001 %>%
+  left_join(world_bank, by = c("Country_code", "year")) %>%
+  left_join(swiid9_7_summary, by = c("Country_code", "year"))
+
+# Load and merge country metadata, filter out rows with missing values in key columns
+data0 <- data %>%
+  filter(!is.na(GDP_per_capita), !is.na(gini_disp)) %>%
+  rename(inequality = gini_disp)
+
+data <- data0 %>%
+  select(-Country_code, -year)
+
+min_growth <- min(data$GDP_per_capita)
+max_growth <- max(data$GDP_per_capita)
+
+min_inequality <- min(data$inequality)
+max_inequality <- max(data$inequality)
+
+```
+
+Load and Prepare the Data
+
+```{r}
+set.seed(0209)
+
+library(dplyr)
+library(caret)
+library(glmnet)
+library(mco)
+
+pre_process <- preProcess(data, method = c('bagImpute', 'range'))
+data <- predict(pre_process, newdata = data)
+
+predictors <- data %>%
+  select(redistribution, human_capital, technology, trade, FDI, credit, fertility, unemployment, inflation) %>%
+  as.matrix(.)
+
+# Convert the columns to numeric, if needed
+GDP_per_capita <- as.numeric(data$GDP_per_capita)
+inequality <- as.numeric(data$inequality)
+inequality_penalty <- data$inequality[which.max(data$GDP_per_capita)]
+
+```
+
+Train the Machine Learning Models (Elastic Net)
+
+```{r message=TRUE}
+# Set up cross-validation
+control <- trainControl(
+  method = "cv", 
+  number = 5
+)
+
+tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.1), lambda = 10^seq(-3, -2, length.out = 50))
+
+# Train Elastic Net model for GDP per capita (growth)
+model_growth <- train(
+  predictors, GDP_per_capita,
+  method = "glmnet",
+  trControl = control,
+  tuneGrid = tuneGrid,
+  metric = "RMSE",
+  na.action = na.omit
+)
+
+# Train Elastic Net model for inequality (Gini index)
+model_inequality <- train(
+  predictors, inequality,
+  method = "glmnet",
+  trControl = control,
+  tuneGrid = tuneGrid,
+  metric = "RMSE",
+  na.action = na.omit
+)
+
+# Extract coefficients from the models
+coefficients_growth <- matrix(coef(model_growth$finalModel, model_growth$bestTune$lambda), ncol = 1)
+coefficients_inequality <- matrix(coef(model_inequality$finalModel, model_inequality$bestTune$lambda), ncol = 1)
+
+```
+
+Define the Optimisation Function
+
+```{r}
+
+objective_function <- function(x) {
+  x_matrix <- matrix(x, nrow = 1)  # Convert input to a row matrix
+  growth <- as.matrix(cbind(1, x_matrix) %*% coefficients_growth)
+  inequality <- as.matrix(cbind(1, x_matrix) %*% coefficients_inequality)
+  return(c(-growth, inequality))  # Maximize growth, minimize inequality
+}
+
+```
+
+Run the Multi-Objective Optimisation Using NSGA-II (take hours to complete)
+
+```{r}
+result <- nsga2(
+  objective_function,
+  idim = ncol(predictors),
+  odim = 2, 
+  lower.bounds = rep(0, ncol(predictors)),
+  upper.bounds = rep(1, ncol(predictors)),
+  popsize = 10000
+)
+
+pareto_front <- as.data.frame(result$value) %>%
+  setNames(c("GDP_per_capita", "inequality")) %>%
+  transform(GDP_per_capita = -GDP_per_capita)
+
+write.csv(pareto_front, "figs/pareto_front_swiid.csv", row.names = FALSE)
+
+```
+
+
+This is the NSGA-II output (to skip the high computation)
+```{r}
+pareto_front <- read.csv("figs/pareto_front_swiid.csv")
+```
+
+
+Slope from the Pareto Front
+
+```{r}
+trade_off_pareto <- lm(inequality ~ GDP_per_capita, data = pareto_front, subset = GDP_per_capita <= 1)
+
+summary(trade_off_pareto)
+
+slope <- trade_off_pareto[["coefficients"]][["GDP_per_capita"]]
+trade_off_actual <- lm(inequality ~ GDP_per_capita, data = data, subset = inequality < 0.2)
+intercept <- predict(trade_off_actual,data.frame(GDP_per_capita = 1))-slope
+
+```
+
+
+Distance from Choice
+
+```{r}
+data$distance <- abs(data$inequality - (slope * data$GDP_per_capita + intercept))
+
+too_close_threshold <- 0.02
+too_far_threshold <- 0.2
+
+data$point_category <- ifelse(data$distance < too_close_threshold, "too_close",
+                              ifelse(data$distance > too_far_threshold, "too_far", "Normal"))
+
+plot_result1 <- ggplot() +
+  geom_point(data = pareto_front, aes(x = GDP_per_capita, y = inequality), color = "orange") +
+  geom_point(data = data, aes(x = GDP_per_capita, y = inequality, color = point_category)) + 
+  geom_abline(intercept=intercept, slope=slope, color = "blue", linetype = "dashed") +
+  theme_minimal() +
+  labs(y = "Inequality", x = "Income", color = "Distance") +  
+  xlim(0, 1) +
+  scale_color_manual(
+    values = c("too_close" = "green", "too_far" = "red", "Normal" = "grey"),
+    labels = c(
+      "too_close" = paste("Close (<", too_close_threshold, ")", sep = ""),
+      "too_far" = paste("Far (>", too_far_threshold, ")", sep = "")
+    )
+  )
+
+plot_result1
+
+```
+
+Close to the Choice
+
+```{r}
+
+data$code <- data0$Country_code
+
+data_too_near <- data[data$distance < too_close_threshold, ]
+
+library(dplyr)
+labels <- data_too_near %>%
+  group_by(code) %>%
+  slice(n())
+
+plot_result <- plot_result1 + geom_text(data = labels, aes(x = GDP_per_capita, y = inequality, label = code), 
+            hjust = -0.2, vjust = -0.5, size = 3, show.legend = FALSE)
+
+plot_result 
+
+```
+
+
+Output
+
+```{r}
+ggsave(file="figs/Swiid.svg", plot=plot_result, width=10, height=5)
+
+```
