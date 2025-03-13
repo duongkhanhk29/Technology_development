@@ -1,0 +1,1 @@
+This repository is for the research project: Trade offs between Growth and Inequality. Please cite my paper using the link below if you use any of its materials. Duong, K. (2025). "If inequality is an economic choice, what is the relationship between inequality and growth?" Structural Change and Economic Dynamics. https://doi.org/10.1016/j.strueco.2025.02.014
