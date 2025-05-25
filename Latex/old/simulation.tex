@@ -1,0 +1,64 @@
+\begin{algorithm}
+\scriptsize
+\caption{Wealth Inequality Simulation with Network Effects}
+\begin{algorithmic}[1]
+\Require Number of agents $n_{\text{agents}}$, number of periods $n_{\text{periods}}$, parameters $\alpha$, $\beta$, $r$, and network properties.
+\State \textbf{Initialisation:}
+\State Set random seed for reproducibility.
+\State Initialise agents with:
+\State \hspace{\algorithmicindent} \textbf{Capital:} $C_i \sim \mathcal{N}(50, 10)$
+\State \hspace{\algorithmicindent} \textbf{Labour:} $L_i \sim \mathcal{N}(1, 0.2)$
+\State \hspace{\algorithmicindent} \textbf{Technology:} $T_i \sim \mathcal{N}(1, 0.3)$
+\State \hspace{\algorithmicindent} \textbf{Tech adoption status:} $A_i \gets \text{False}$
+\State \hspace{\algorithmicindent} \textbf{Wealth:} $W_i \gets T_i \cdot (C_i^\alpha) \cdot (L_i^\beta)$
+\State Generate a random network with connection probability $p$.
+
+\For{$t = 1$ to $n_{\text{periods}}$}
+    \State \textbf{Independent Technology Adoption:}
+    \For{$i = 1$ to $n_{\text{agents}}$}
+        \If{$\text{rand}() < \text{tech\_adoption\_rate}$}
+            \State $A_i \gets \text{True}$
+        \EndIf
+    \EndFor
+
+    \State \textbf{Technology Transfer within Network:}
+    \For{$i = 1$ to $n_{\text{agents}}$}
+        \If{$A_i = \text{False}$}
+            \State Identify neighbours $\mathcal{N}(i)$.
+            \State Calculate probability of adoption: $P_{\text{transfer}} = 1 - (1 - 0.05)^{|\mathcal{N}_A(i)|}$.
+            \If{$\text{rand}() < P_{\text{transfer}}$}
+                \State $A_i \gets \text{True}$
+            \EndIf
+        \EndIf
+    \EndFor
+
+    \State \textbf{Mutual Learning:}
+    \For{$i = 1$ to $n_{\text{agents}}$}
+        \If{$A_i = \text{True}$}
+            \State Identify neighbours $\mathcal{N}_A(i)$ with $A_j = \text{True}$.
+            \State Update technology: $T_i \gets T_i \cdot (\text{mutual\_learning\_boost})^{|\mathcal{N}_A(i)|}$
+        \EndIf
+    \EndFor
+
+    \State \textbf{Triadic Closure:}
+    \For{$i = 1$ to $n_{\text{agents}}$}
+        \For{each $j$ such that $i \neq j$}
+            \State Check for common neighbours $k$ between $i$ and $j$.
+            \If{not connected and $\text{rand}() < \text{triadic\_closure\_prob}$}
+                \State Add edge between $i$ and $j$.
+            \EndIf
+        \EndFor
+    \EndFor
+
+    \State \textbf{Update Wealth and Capital:}
+    \For{$i = 1$ to $n_{\text{agents}}$}
+        \State Update wealth: $W_i \gets T_i \cdot (C_i^\alpha) \cdot (L_i^\beta)$.
+        \State Update capital: $C_i \gets C_i + r \cdot W_i$.
+    \EndFor
+
+    \State \textbf{Record Metrics:}
+    \State Compute Gini coefficient: $\text{Gini}(W)$.
+    \State Record average wealth: $\bar{W} = \frac{1}{n_{\text{agents}}} \sum_{i=1}^{n_{\text{agents}}} W_i$.
+\EndFor
+\end{algorithmic}
+\end{algorithm}
