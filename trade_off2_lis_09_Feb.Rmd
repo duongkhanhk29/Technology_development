@@ -233,7 +233,9 @@ labels <- data_too_near %>%
   group_by(code) %>%
   slice(n())
 
-plot_result <- plot_result1 + geom_text(data = labels, aes(x = GDP_per_capita, y = inequality, label = code), 
+library(ggrepel)
+
+plot_result <- plot_result1 + geom_text_repel(data = labels, aes(x = GDP_per_capita, y = inequality, label = code), 
             hjust = -0.2, vjust = -0.5, size = 3, show.legend = FALSE)
 
 plot_result
@@ -273,7 +275,7 @@ trends <- ggplot(country_means, aes(x = mean_GDP_per_capita, y = mean_inequality
               aes(linetype = "Inequality < 0.2"), color = "blue", method = "lm", se = FALSE) +
   geom_smooth(data = subset(country_means, mean_GDP_per_capita < 0.2), 
               aes(linetype = "Income < 0.2"), color = "red", method = "lm", se = FALSE) +
-  geom_text(aes(label = code, color = Region), size = 2) +  
+  geom_text_repel(aes(label = code, color = Region), size = 2) +  
   labs(title = "",
        x = "Mean Income (GDP per capita)", 
        y = "Mean Inequality", 
@@ -325,9 +327,9 @@ panel
 Output
 
 ```{r}
-ggsave(file="figs/Lis.svg", plot=plot_result, width=10, height=5)
-ggsave(file="figs/trends.svg", plot=trends, width=10, height=5)
-ggsave(file="figs/panel.svg", plot=panel, width=10, height=10)
+ggsave(file="figs/Lis.pdf", plot=plot_result, width=10, height=5)
+ggsave(file="figs/trends.pdf", plot=trends, width=10, height=5)
+ggsave(file="figs/panel.pdf", plot=panel, width=10, height=10)
 write.csv(country_means, file="figs/country_means.csv", row.names = FALSE)
 
 

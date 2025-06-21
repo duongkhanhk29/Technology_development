@@ -213,7 +213,9 @@ labels <- data_too_near %>%
   group_by(code) %>%
   slice(n())
 
-plot_result <- plot_result1 + geom_text(data = labels, aes(x = GDP_per_capita, y = inequality, label = code), 
+library(ggrepel)
+
+plot_result <- plot_result1 + geom_text_repel(data = labels, aes(x = GDP_per_capita, y = inequality, label = code), 
             hjust = -0.2, vjust = -0.5, size = 3, show.legend = FALSE)
 
 plot_result 
@@ -224,6 +226,6 @@ plot_result
 Output
 
 ```{r}
-ggsave(file="figs/Swiid.svg", plot=plot_result, width=10, height=5)
+ggsave(file="figs/Swiid.pdf", plot=plot_result, width=10, height=5)
 
 ```
